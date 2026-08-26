@@ -10,7 +10,7 @@ async function seed() {
       process.cwd(),
       "postgres",
       "seeds",
-      "seed.sql"
+      "001_initial_seed.sql"
     );
 
     const sql = fs.readFileSync(seedPath, "utf8");
