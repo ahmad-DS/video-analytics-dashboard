@@ -3,10 +3,7 @@ import { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { pool } from "./db/client";
-import {
-  CreateEventBody,
-  EVENT_TYPES,
-} from "./types/event.types";
+import { CreateEventBody, EVENT_TYPES } from "./types/event.types";
 
 dotenv.config();
 
@@ -71,6 +68,84 @@ app.post("/api/events", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Failed to create event:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+});
+
+app.get("/api/analytics/videos", async (req: Request, res: Response) => {
+  try {
+    // Get pagination query parameters
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
+
+    const offset = (page - 1) * limit;
+
+    const analyticsQuery = `
+      SELECT
+        v.id,
+        v.title,
+        v.video_url AS "videoUrl",
+        p.id AS "productId",
+        p.name AS "productName",
+
+        COUNT(*) FILTER (
+          WHERE e.event_type = 'view'
+        )::int AS views,
+
+        COUNT(*) FILTER (
+          WHERE e.event_type = 'click'
+        )::int AS clicks,
+
+        COUNT(*) FILTER (
+          WHERE e.event_type = 'add_to_cart'
+        )::int AS conversions
+
+      FROM videos v
+
+      JOIN products p
+        ON p.id = v.product_id
+
+      LEFT JOIN engagement_events e
+        ON e.video_id = v.id
+
+      GROUP BY
+        v.id,
+        v.title,
+        v.video_url,
+        p.id,
+        p.name
+
+      ORDER BY v.id
+
+      LIMIT $1
+      OFFSET $2;
+    `;
+
+    const analyticsResult = await pool.query(analyticsQuery, [limit, offset]);
+
+    const countResult = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM videos
+      `,
+    );
+
+    const total = countResult.rows[0].total;
+
+    return res.json({
+      data: analyticsResult.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch video analytics:", error);
 
     return res.status(500).json({
       message: "Internal server error",
